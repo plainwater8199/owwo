@@ -1,12 +1,12 @@
 import { Routes, Route } from 'react-router-dom'
 import Home from './pages/Home'
-import LoginPlaceholder from './pages/LoginPlaceholder'
+import Login from './pages/Login'
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
-      <Route path="/login" element={<LoginPlaceholder />} />
+      <Route path="/login" element={<Login />} />
     </Routes>
   )
 }
