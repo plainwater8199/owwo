@@ -9,6 +9,6 @@
 		reverse_proxy hermes:9119
 	}
 
-	# 其余路径暂给 FastAPI;T3 起换成 React 静态首页
-	reverse_proxy fastapi:8000
+	# 其余路径:React 公开首页(Vite dev server;生产改为静态 file_server)
+	reverse_proxy frontend:5173
 }

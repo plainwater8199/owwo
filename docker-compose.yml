@@ -14,6 +14,7 @@ services:
       - caddy_config:/config
     depends_on:
       - fastapi
+      - frontend
       - hermes
 
   fastapi:
@@ -24,6 +25,16 @@ services:
       - ./data:/data
     environment:
       - OWWO_DB_PATH=/data/owwo.db
+
+  frontend:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    # 源码挂入;node_modules 用独立卷(容器内装 linux 版,避开跨平台原生二进制冲突)。
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: sh -c "npm config set registry https://registry.npmmirror.com && npm install && npm run dev -- --host 0.0.0.0"
 
   hermes:
     image: nousresearch/hermes-agent:latest
@@ -44,3 +55,4 @@ volumes:
   caddy_data:
   caddy_config:
   hermes_data:
+  frontend_node_modules:
