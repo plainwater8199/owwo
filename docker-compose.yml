@@ -1,0 +1,75 @@
+# T5:共享门禁鉴权落地。架构见 ADR-0001(共享网关)+ ADR-0002(Caddy 反代)。
+#
+# 关键:Hermes dashboard 绑 loopback(127.0.0.1)以豁免其 fail-closed auth gate
+# (见 ADR-0001:Hermes 不支持 trusted-header SSO,绑 loopback 即 auth_required=False)。
+# hermes 容器共享 caddy 的网络命名空间(network_mode: service:caddy),
+# 故 caddy 能经 127.0.0.1:9119 反代到 hermes;外部任何请求必先过 Caddy forward_auth
+# (→ fastapi /auth-check 校验 owwo session),Hermes 侧裸奔但只在 caddy loopback 可达。
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # 宿主机 80 被另一项目(Dify 的 docker-nginx-1)占用,owwo 本地用 8080。
+    # 容器内 Caddy 仍听 80;生产独立部署时改回 "80:80"。
+    ports:
+      - "8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - fastapi
+      - frontend
+    # 注意:caddy 不再 depends_on hermes —— hermes 现在依赖 caddy 的网络命名空间,
+    # 反向依赖会成环。caddy 启动早于 hermes 时,hermes.localhost 请求会暂时 502,hermes 起来即恢复。
+
+  fastapi:
+    build: ./backend
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    environment:
+      - OWWO_DB_PATH=/data/owwo.db
+      # 会话签名密钥(T4):生产换高熵随机值。
+      - OWWO_SECRET_KEY=dev-insecure-change-me
+      # session cookie 跨子域:主站 localhost ↔ hermes 子域共享同一 cookie。
+      - OWWO_SESSION_DOMAIN=localhost
+      # /auth-check 重定向登录页与回跳 Hermes 用(供 Caddy forward_auth)。
+      - OWWO_PUBLIC_URL=http://localhost:8080
+      - OWWO_HERMES_URL=http://hermes.localhost:8080
+
+  frontend:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    # 源码挂入;node_modules 用独立卷(容器内装 linux 版,避开跨平台原生二进制冲突)。
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: sh -c "npm config set registry https://registry.npmmirror.com && npm install && npm run dev -- --host 0.0.0.0"
+
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    restart: unless-stopped
+    command: gateway run
+    # 共享 caddy 的网络命名空间 → dashboard 绑 127.0.0.1 即可被 caddy 经 loopback 反代,
+    # 无需(也不能)再发布端口或参与默认网络的 DNS 别名。
+    network_mode: "service:caddy"
+    environment:
+      - HERMES_DASHBOARD=1
+      # 绑 loopback → 豁免 Hermes 的 fail-closed auth gate(无需任何 provider)。
+      - HERMES_DASHBOARD_HOST=127.0.0.1
+      - HERMES_DASHBOARD_PORT=9119
+      # loopback 模式下的唯一软认证:固定 token 嵌在根 HTML 里供 SPA 自取。
+      # 生产换高熵随机值;此处仅 caddy loopback 可达,泄漏面=已过 forward_auth 者。
+      - HERMES_DASHBOARD_SESSION_TOKEN=owwo-dev-hermes-token-2026
+      - HERMES_DASHBOARD_PUBLIC_URL=http://hermes.localhost:8080
+      - HERMES_DISABLE_LAZY_INSTALLS=1
+    volumes:
+      - hermes_data:/opt/data
+
+volumes:
+  caddy_data:
+  caddy_config:
+  hermes_data:
+  frontend_node_modules:
