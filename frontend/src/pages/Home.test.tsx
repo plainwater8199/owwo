@@ -42,4 +42,21 @@ describe('Home 首页', () => {
     expect(await screen.findByText(/alice/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /登录/ })).not.toBeInTheDocument()
   })
+
+  it('已登录时显示进入 Hermes 的链接,指向 Hermes 子域', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ username: 'alice' }), { status: 200 }),
+      ),
+    )
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>,
+    )
+
+    const hermesLink = await screen.findByRole('link', { name: /进入 Hermes/ })
+    expect(hermesLink).toHaveAttribute('href', expect.stringContaining('hermes.localhost'))
+  })
 })

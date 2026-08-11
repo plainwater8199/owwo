@@ -1,14 +1,29 @@
-:80 {
-	# FastAPI:健康检查 + 登录/T5 的鉴权接口
+{
+	# 本地 dev:关掉 admin API。Caddy 对 .localhost 用 plain HTTP(http:// 前缀)。
+	admin off
+}
+
+# 主站(localhost):公开首页 + 登录/me/auth-check 等 API
+http://localhost {
 	reverse_proxy /health fastapi:8000
 	reverse_proxy /api/* fastapi:8000
-
-	# Hermes Dashboard:strip /hermes 前缀后转发(Hermes 自身在根路径)。
-	# T1 阶段不挂 forward_auth;T5 会在本块加 forward_auth /auth-check。
-	handle_path /hermes/* {
-		reverse_proxy hermes:9119
-	}
+	reverse_proxy /auth-check fastapi:8000
 
 	# 其余路径:React 公开首页(Vite dev server;生产改为静态 file_server)
 	reverse_proxy frontend:5173
+}
+
+# Hermes 子域(hermes.localhost):受 forward_auth 保护
+# 用户的每个请求先打 fastapi /auth-check(带原始 Cookie):
+#   有效 owwo session → 2xx → 放行,反代到共享网络命名空间里的 loopback hermes
+#   无 session → 302 → Caddy 透传给浏览器 → 跳主站 /login?next=<hermes URL>
+http://hermes.localhost {
+	forward_auth fastapi:8000 {
+		uri /auth-check
+	}
+	reverse_proxy 127.0.0.1:9119 {
+		# Hermes 绑 127.0.0.1,要求 Host 头 = 绑定 hostname,否则 400。
+		# Caddy 默认保留原始 Host(hermes.localhost),需改写回 loopback。
+		header_up Host 127.0.0.1
+	}
 }

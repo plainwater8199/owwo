@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 
 type Me = { username: string } | null
 
+const HERMES_URL = import.meta.env.VITE_HERMES_URL ?? 'http://hermes.localhost:8080'
+
 /**
- * 公开首页。挂载后读 GET /api/me:已登录则显示用户名,
+ * 公开首页。挂载后读 GET /api/me:已登录则显示用户名 + 进入 Hermes 入口,
  * 未登录则显示登录入口(指向 /login)。
  */
 export default function Home() {
@@ -23,7 +25,15 @@ export default function Home() {
       <header className="flex items-center justify-between px-8 py-4">
         <span className="text-xl font-semibold">owwo</span>
         {loaded && me ? (
-          <span className="text-slate-700">已登录:{me.username}</span>
+          <div className="flex items-center gap-4">
+            <span className="text-slate-700">已登录:{me.username}</span>
+            <a
+              href={HERMES_URL}
+              className="rounded-md bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"
+            >
+              进入 Hermes
+            </a>
+          </div>
         ) : (
           <Link
             to="/login"

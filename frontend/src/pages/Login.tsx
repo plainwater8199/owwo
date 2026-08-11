@@ -1,15 +1,23 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+
+// Hermes 子域 URL(经 Caddy forward_auth 保护)。next 必须命中此前缀才放行外部跳转,
+// 防止 open redirect(未登录被引到任意域)。
+const HERMES_URL = import.meta.env.VITE_HERMES_URL ?? 'http://hermes.localhost:8080'
 
 /**
- * 登录页。提交 → POST /api/login → 成功跳 /,失败显错。
- * 会话 cookie 由后端(Starlette SessionMiddleware)下发并签名。
+ * 登录页。提交 → POST /api/login →
+ *  - 有合法 ?next=(Caddy forward_auth 拦下未登录时带上的 Hermes 回跳地址)→ 跳该外部 URL
+ *  - 否则 → 跳首页 /
+ * 失败显错。会话 cookie 由后端(Starlette SessionMiddleware)下发并签名。
  */
 export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const next = params.get('next')
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -20,6 +28,10 @@ export default function Login() {
       body: JSON.stringify({ username, password }),
     })
     if (res.ok) {
+      if (next && next.startsWith(HERMES_URL)) {
+        window.location.href = next
+        return
+      }
       navigate('/')
       return
     }

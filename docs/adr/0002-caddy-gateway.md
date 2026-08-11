@@ -19,3 +19,17 @@ T1 三服务已跑通冒烟(`/health` 经 Caddy→FastAPI 返回 200;`/hermes/` 
 2. **端口 80 在本机被另一项目(Dify 的 `docker-nginx-1`)占用。** T1 临时把 Caddy 宿主机映射改到 `8080`(容器内仍听 80)。生产独立部署(或停掉 Dify)后改回 `80:80`。
 
 3. **basic-auth provider 满足 gate,但不是用户鉴权。** 绑 `0.0.0.0` 触发 Hermes 的 fail-closed auth gate;T1 配 `HERMES_DASHBOARD_BASIC_AUTH_USERNAME/PASSWORD=internal/internal-dev-pw` 只是让 dashboard 肯启动的**内部占位**。真正的用户级鉴权仍由 Caddy `forward_auth`(T5)完成,且因 Hermes 不支持 trusted-header SSO,T5 可能需要自定义 provider(见 ADR-0001 的放弃方案)。
+
+## 实施记录(T5 落地)
+
+T5 按"子域名 + forward_auth"方向落地,并修正了上面的第 1、3 点:
+
+1. **子域名方案确认(第 1 点的解)。** 改用 `hermes.localhost`(macOS `.localhost` 自动解析 127.0.0.1,无需改 hosts),Caddy 按 host 分流:`http://localhost` 服务主站,`http://hermes.localhost` 反代 Hermes。路径根对齐,无需 strip 前缀,Hermes 的绝对路径重定向(`/login`、`/assets/*`)在 `hermes.localhost` 下天然正确。
+
+2. **forward_auth 实测工作。** `forward_auth fastapi:8000 { uri /auth-check }`:Caddy 对 hermes 子域的每个请求先打 fastapi `/auth-check`(带原始 Cookie);有效 owwo session → 2xx 放行 → `reverse_proxy 127.0.0.1:9119`;无 session → fastapi 返回 302 → Caddy 透传 → 浏览器跳 `localhost:8080/login?next=<hermes URL>`。
+
+3. **第 3 点的最终解(无需自定义 provider)。** 不再让 Hermes 绑 0.0.0.0 + basic-auth 占位,而是 `network_mode: "service:caddy"` + 绑 `127.0.0.1` 直接豁免 Hermes 的 gate(见 ADR-0001 实施记录)。basic-auth 占位 env 已移除。
+
+4. **两个必须的 Caddy/cookie 配置(冒烟踩到):**
+   - **Host 改写**:Hermes 绑 127.0.0.1 时校验 Host 头 = 绑定 hostname,Caddy 默认保留原始 Host 会被 Hermes 以 400 拒绝。reverse_proxy 需 `header_up Host 127.0.0.1`。
+   - **session cookie 跨子域**:owwo session cookie 需从主站 `localhost` 带到 `hermes.localhost` 子域,故 SessionMiddleware 设 `OWWO_SESSION_DOMAIN=localhost`(domain cookie 对所有 `*.localhost` 生效)。生产换真实父域。
