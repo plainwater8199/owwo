@@ -1,0 +1,41 @@
+# T1:三服务骨架。Caddy 反代 + Hermes(容器化需 basic auth provider 才肯启动)。
+# 外部用户鉴权留到 T5(Caddy forward_auth);此处 Hermes 的 basic auth 只是「内部占位」。
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # 宿主机 80 被另一项目(Dify 的 docker-nginx-1)占用,owwo 本地用 8080。
+    # 容器内 Caddy 仍听 80;生产独立部署时改回 "80:80"。
+    ports:
+      - "8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - fastapi
+      - hermes
+
+  fastapi:
+    build: ./backend
+    restart: unless-stopped
+
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    restart: unless-stopped
+    command: gateway run
+    environment:
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_HOST=0.0.0.0
+      - HERMES_DASHBOARD_PUBLIC_URL=http://localhost/hermes
+      # 绑 0.0.0.0 触发强制 gate,必须配 provider 否则 fail-closed 拒绝启动。
+      # 这是内部共享账号,只在 docker 内网;真正的用户鉴权在 Caddy 层(T5)。
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=internal
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=internal-dev-pw
+    volumes:
+      - hermes_data:/opt/data
+
+volumes:
+  caddy_data:
+  caddy_config:
+  hermes_data:

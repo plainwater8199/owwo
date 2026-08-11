@@ -1,0 +1,14 @@
+:80 {
+	# FastAPI:健康检查 + 登录/T5 的鉴权接口
+	reverse_proxy /health fastapi:8000
+	reverse_proxy /api/* fastapi:8000
+
+	# Hermes Dashboard:strip /hermes 前缀后转发(Hermes 自身在根路径)。
+	# T1 阶段不挂 forward_auth;T5 会在本块加 forward_auth /auth-check。
+	handle_path /hermes/* {
+		reverse_proxy hermes:9119
+	}
+
+	# 其余路径暂给 FastAPI;T3 起换成 React 静态首页
+	reverse_proxy fastapi:8000
+}
