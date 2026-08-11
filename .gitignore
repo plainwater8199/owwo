@@ -15,3 +15,6 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# App data(运行时 SQLite 库等,不提交)
+/data/

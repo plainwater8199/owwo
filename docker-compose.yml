@@ -19,6 +19,11 @@ services:
   fastapi:
     build: ./backend
     restart: unless-stopped
+    # 用户库(SQLite)。CLI 与(未来的)登录接口共享同一文件。
+    volumes:
+      - ./data:/data
+    environment:
+      - OWWO_DB_PATH=/data/owwo.db
 
   hermes:
     image: nousresearch/hermes-agent:latest
