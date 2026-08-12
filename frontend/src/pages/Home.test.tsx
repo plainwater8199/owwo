@@ -57,6 +57,6 @@ describe('Home 首页', () => {
     )
 
     const hermesLink = await screen.findByRole('link', { name: /进入 Hermes/ })
-    expect(hermesLink).toHaveAttribute('href', expect.stringContaining('hermes.localhost'))
+    expect(hermesLink).toHaveAttribute('href', expect.stringContaining('localhost:8081'))
   })
 })

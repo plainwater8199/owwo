@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-// Hermes 子域 URL(经 Caddy forward_auth 保护)。next 必须命中此前缀才放行外部跳转,
+// Hermes URL(经 Caddy forward_auth 保护,端口区分 localhost:8081)。next 必须命中此前缀才放行外部跳转,
 // 防止 open redirect(未登录被引到任意域)。
-const HERMES_URL = import.meta.env.VITE_HERMES_URL ?? 'http://hermes.localhost:8080'
+const HERMES_URL = import.meta.env.VITE_HERMES_URL ?? 'http://localhost:8081'
 
 /**
  * 登录页。提交 → POST /api/login →

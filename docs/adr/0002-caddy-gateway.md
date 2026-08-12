@@ -32,4 +32,25 @@ T5 按"子域名 + forward_auth"方向落地,并修正了上面的第 1、3 点:
 
 4. **两个必须的 Caddy/cookie 配置(冒烟踩到):**
    - **Host 改写**:Hermes 绑 127.0.0.1 时校验 Host 头 = 绑定 hostname,Caddy 默认保留原始 Host 会被 Hermes 以 400 拒绝。reverse_proxy 需 `header_up Host 127.0.0.1`。
-   - **session cookie 跨子域**:owwo session cookie 需从主站 `localhost` 带到 `hermes.localhost` 子域,故 SessionMiddleware 设 `OWWO_SESSION_DOMAIN=localhost`(domain cookie 对所有 `*.localhost` 生效)。生产换真实父域。
+   - ~~**session cookie 跨子域**~~(⚠ 已废弃,见下文「登录循环修复」):曾设 `OWWO_SESSION_DOMAIN=localhost` 让 cookie 跨 `*.localhost` 子域,但浏览器对 localhost 有特殊处理,实测不生效,反而导致登录循环。
+
+## 实施记录(登录循环修复,2026-08)
+
+用户报告:浏览器登录主站后点「进入 Hermes」被弹回登录页,无限循环。根因与修复:
+
+- **根因**:浏览器(Chrome/Safari/Firefox)对 `localhost` 有特殊处理——`Domain=localhost` 的 cookie 不发送到 `*.localhost` 子域(被降级为 host-only,仅匹配 `localhost` 本身)。于是 `hermes.localhost` 的请求不带 session,Caddy forward_auth 的 `/auth-check` 永远读不到 session → 302 回登录页 → 循环。此前 curl 冒烟能过,是因为 curl 的 cookie 域匹配比浏览器宽松,掩盖了问题(假绿)。
+- **修复:弃子域,改端口区分。** Hermes 从 `hermes.localhost:8080` 改为 `localhost:8081`(与主站 `localhost:8080` 同 host、不同端口)。cookie 不再设 `Domain`(host-only,host=`localhost`),按 RFC 6265 域匹配**不比较端口**,故 host-only cookie 在 `localhost:8080`↔`localhost:8081` 间天然共享,`/auth-check` 能读到 session。
+- **落地**:Caddyfile 的 `http://hermes.localhost` 块改为 `http://:81`(容器内听 81,宿主机 8081→81);docker-compose caddy 发布 `8081:81`、移除 `OWWO_SESSION_DOMAIN`、`OWWO_HERMES_URL=http://localhost:8081`;前端 `HERMES_URL` 默认值同步为 `http://localhost:8081`。Host 头改写(`header_up Host 127.0.0.1`)仍需要,逻辑不变。
+- **验证**:curl 三连——`/health` 200;未登录访问 `:8081` → 302 回登录页(`next` 指向 `localhost:8081`);登录后带 cookie 访问 `:8081` → **200 放行**。Set-Cookie 确认无 `Domain=`(host-only)。WebSocket PTY 留浏览器实测。
+- **生产**:端口区分是本地 dev 绕 localhost 特殊处理的手段,生产用真实域名(主站 `owwo.example.com` / Hermes `hermes.owwo.example.com`)并设 `Domain=.example.com` 即可跨子域——真实域名没有 localhost 的特殊行为。
+
+## 实施记录(WebSocket 403 修复,2026-08)
+
+用户报告:进入 Hermes 聊天 "websocket connection failed"。根因与修复:
+
+- **根因**:Caddy `forward_auth` 在转发前会剥离 hop-by-hop 头(`Connection`、`Upgrade`)。WS 握手请求经 forward_auth 处理后 Upgrade 标记丢失,Hermes 收到的是普通 `GET /api/ws`(非握手) → FastAPI 的 `@app.websocket` 路由对非 Upgrade 请求返回 403。SPA 自带的 `?token=` 没问题(直连 Hermes 同 token 返回 101),纯粹是 forward_auth 破坏了握手。
+- **诊断三步**:① 绕过 Caddy 直连 Hermes `127.0.0.1:9119` + token → 101(Hermes 正常);② 经 Caddy(有 forward_auth) + token → 403;③ 经 Caddy(临时去掉 forward_auth) + token → 101。锁定 forward_auth。
+- **修复:WS 绕过 forward_auth**。Caddyfile 用 `@ws` matcher(`Connection: *Upgrade*` + `Upgrade: websocket`)匹配 WS 请求,`handle @ws` 直接 `reverse_proxy` 不经 forward_auth;`handle`(兜底)对非 WS 请求(HTML、REST)走 forward_auth + reverse_proxy。互斥的 `handle` 保证 WS 走第一条、其余走第二条。
+- **安全性**:WS 不再过 owwo session 的 forward_auth,改由 Hermes 自身 `?token=` 认证。该 token 嵌在根 HTML 的 `__HERMES_SESSION_TOKEN__`,而根 HTML 仍受 forward_auth 保护 —— 只有过了 owwo 登录的浏览器才能拿到 token,故 WS 的访问控制与登录态等价。生产 `HERMES_DASHBOARD_SESSION_TOKEN` 必须换高熵随机值。
+- **验证**:curl 三连 —— WS `?token=` → 101;`GET /` 无 cookie → 302 回登录页;`GET /` 有 cookie → 200。
+- **坑**:本机 `caddy reload` 因 `admin off` 失效(走 admin API);改用 `docker compose restart caddy`,但会连带 restart hermes(`network_mode: service:caddy` 依赖 caddy 的网络命名空间),需等 `HERMES_DASHBOARD_READY` 才能测。

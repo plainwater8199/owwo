@@ -10,9 +10,13 @@ services:
     image: caddy:2
     restart: unless-stopped
     # 宿主机 80 被另一项目(Dify 的 docker-nginx-1)占用,owwo 本地用 8080。
-    # 容器内 Caddy 仍听 80;生产独立部署时改回 "80:80"。
+    # 主站 localhost:8080(→容器 80),Hermes localhost:8081(→容器 81):同 host 不同端口。
+    # 端口区分是为了 host-only cookie 能跨端口共享 —— 浏览器不把 Domain=localhost 的 cookie
+    # 发往 *.localhost 子域(曾用 hermes.localhost 子域,真实浏览器登录循环),故弃子域用端口。
+    # 生产独立部署改回 80 + 真实子域名 + Domain=根域。
     ports:
       - "8080:80"
+      - "8081:81"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -21,7 +25,7 @@ services:
       - fastapi
       - frontend
     # 注意:caddy 不再 depends_on hermes —— hermes 现在依赖 caddy 的网络命名空间,
-    # 反向依赖会成环。caddy 启动早于 hermes 时,hermes.localhost 请求会暂时 502,hermes 起来即恢复。
+    # 反向依赖会成环。caddy 启动早于 hermes 时,Hermes 端口请求会暂时 502,hermes 起来即恢复。
 
   fastapi:
     build: ./backend
@@ -32,11 +36,11 @@ services:
       - OWWO_DB_PATH=/data/owwo.db
       # 会话签名密钥(T4):生产换高熵随机值。
       - OWWO_SECRET_KEY=dev-insecure-change-me
-      # session cookie 跨子域:主站 localhost ↔ hermes 子域共享同一 cookie。
-      - OWWO_SESSION_DOMAIN=localhost
+      # 不设 OWWO_SESSION_DOMAIN:host-only cookie(host=localhost),开发用端口区分
+      # (主站 8080 ↔ Hermes 8081)跨端口共享。生产子域名部署时设 Domain=根域以跨子域。
       # /auth-check 重定向登录页与回跳 Hermes 用(供 Caddy forward_auth)。
       - OWWO_PUBLIC_URL=http://localhost:8080
-      - OWWO_HERMES_URL=http://hermes.localhost:8080
+      - OWWO_HERMES_URL=http://localhost:8081
 
   frontend:
     image: node:22-alpine
@@ -63,7 +67,7 @@ services:
       # loopback 模式下的唯一软认证:固定 token 嵌在根 HTML 里供 SPA 自取。
       # 生产换高熵随机值;此处仅 caddy loopback 可达,泄漏面=已过 forward_auth 者。
       - HERMES_DASHBOARD_SESSION_TOKEN=owwo-dev-hermes-token-2026
-      - HERMES_DASHBOARD_PUBLIC_URL=http://hermes.localhost:8080
+      - HERMES_DASHBOARD_PUBLIC_URL=http://localhost:8081
       - HERMES_DISABLE_LAZY_INSTALLS=1
     volumes:
       - hermes_data:/opt/data

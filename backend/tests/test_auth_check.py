@@ -34,6 +34,6 @@ def test_auth_check_without_session_redirects_to_login(monkeypatch, tmp_path):
     assert response.status_code == 302
     location = response.headers["location"]
     assert "/login" in location
-    # next 指向 Hermes(登录后回跳)
+    # next 指向 Hermes(登录后回跳)。next 经 quote(safe="") 编码,冒号 → %3A。
     assert "next=" in location
-    assert "hermes.localhost" in location
+    assert "localhost%3A8081" in location

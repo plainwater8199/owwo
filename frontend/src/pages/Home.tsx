@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 type Me = { username: string } | null
 
-const HERMES_URL = import.meta.env.VITE_HERMES_URL ?? 'http://hermes.localhost:8080'
+const HERMES_URL = import.meta.env.VITE_HERMES_URL ?? 'http://localhost:8081'
 
 /**
  * 公开首页。挂载后读 GET /api/me:已登录则显示用户名 + 进入 Hermes 入口,

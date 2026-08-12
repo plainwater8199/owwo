@@ -75,13 +75,13 @@ describe('Login 登录页', () => {
         new Response(JSON.stringify({ username: 'alice' }), { status: 200 }),
       ),
     )
-    renderAt('/login?next=http://hermes.localhost:8080')
+    renderAt('/login?next=http://localhost:8081')
 
     fireEvent.change(screen.getByLabelText(/用户名/), { target: { value: 'alice' } })
     fireEvent.change(screen.getByLabelText(/密码/), { target: { value: 's3cret' } })
     fireEvent.click(screen.getByRole('button', { name: /登录/ }))
 
-    await waitFor(() => expect(loc.href).toBe('http://hermes.localhost:8080'))
+    await waitFor(() => expect(loc.href).toBe('http://localhost:8081'))
   })
 
   it('next 指向非允许域时不跳转外部(防 open redirect)', async () => {
