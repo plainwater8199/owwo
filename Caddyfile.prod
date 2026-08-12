@@ -36,7 +36,14 @@
 	}
 	handle @ws {
 		reverse_proxy 127.0.0.1:9119 {
+			# hermes 绑 127.0.0.1,其 WS 端点对 Host/Origin 做严格校验(非 loopback 一律 403):
+			#   - Host 必须是 127.0.0.1(浏览器经 nginx 发来的 Host: hermes.owwo.cn 会被拒)
+			#   - Origin 必须缺失(浏览器 WS 握手自动带 Origin: https://hermes.owwo.cn 会被拒)
+			# 故转给 hermes 前:Host 改回 loopback + 剥离 Origin。
+			# Host 与下方非 WS handle 的 127.0.0.1 一致;Origin 仅 WS 需剥(页面导航不发 Origin)。
+			# 踩坑:曾误用 header_up Host {host} 保留客户端 Host → hermes 收到 hermes.owwo.cn → 403。
 			header_up Host 127.0.0.1
+			header_up -Origin
 		}
 	}
 	# 非 WS 请求(页面 HTML、REST API):先 forward_auth 校验 owwo session,再反代。
