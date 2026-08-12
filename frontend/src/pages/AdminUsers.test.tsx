@@ -108,7 +108,7 @@ describe('AdminUsers 用户管理页', () => {
     })
   })
 
-  it('删除按钮(confirm 后)→ DELETE 该用户', async () => {
+  it('吊销访问权按钮(confirm 后)→ DELETE 该用户', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       if ((init?.method ?? 'GET') === 'GET')
@@ -120,7 +120,7 @@ describe('AdminUsers 用户管理页', () => {
     await screen.findByText('alice')
 
     const row = screen.getByText('alice').closest('tr')!
-    fireEvent.click(within(row).getByRole('button', { name: /删除/ }))
+    fireEvent.click(within(row).getByRole('button', { name: /吊销/ }))
 
     await waitFor(() => {
       const del = fetchMock.mock.calls.find(
