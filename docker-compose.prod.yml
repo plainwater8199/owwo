@@ -8,7 +8,10 @@
 #       宿主机 nginx 无法共享容器命名空间,故不能去掉 caddy。
 services:
   caddy:
-    image: caddy:2
+    # 锁定具体版本:国内 docker registry mirror(daocloud)把 caddy:2 滚动 tag 缓存在
+    # v2.4.6(2021),不含 forward_auth 指令(v2.5.0+ 才有)→ caddy 起不来 → hermes 跟着失败。
+    # 用具体小版本 tag 绕过 mirror 缓存陈旧。
+    image: caddy:2.8.4
     restart: unless-stopped
     # 只绑 loopback:外部流量必经宿主机 nginx(443 终结 TLS + 域名路由),
     # 避免裸 Caddy 端口被绕过鉴权直接打到、cookie 明文传输。
