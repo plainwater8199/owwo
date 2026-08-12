@@ -32,6 +32,7 @@
 
 ```bash
 sudo mkdir -p /opt/owwo && sudo chown $USER /opt/owwo   # 部署目录(可改)
+sudo mkdir owwo && sudo chown $USER owwo
 cd /opt/owwo
 git clone <仓库地址> .            # 或已有则 git fetch && git checkout feat/prod-deploy && git pull
 git checkout feat/prod-deploy     # 部署配置在这个分支
@@ -90,7 +91,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ```bash
 sudo certbot certonly --webroot -w /var/www/certbot \
   -d owwo.cn -d hermes.owwo.cn \
-  --email you@example.com --agree-tos --no-eff-email
+  --email waterwang9999@163.com --agree-tos --no-eff-email
 # 把 you@example.com 换成你的邮箱
 ```
 
