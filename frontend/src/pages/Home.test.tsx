@@ -59,4 +59,21 @@ describe('Home 首页', () => {
     const hermesLink = await screen.findByRole('link', { name: /进入 Hermes/ })
     expect(hermesLink).toHaveAttribute('href', expect.stringContaining('localhost:8081'))
   })
+
+  it('已登录管理员显示「用户管理」入口,指向 /admin/users', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ username: 'water', is_admin: true }), { status: 200 }),
+      ),
+    )
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>,
+    )
+
+    const adminLink = await screen.findByRole('link', { name: /用户管理/ })
+    expect(adminLink).toHaveAttribute('href', '/admin/users')
+  })
 })

@@ -18,7 +18,12 @@ export default function RequireAdmin({ children }: { children: React.ReactNode }
       .catch(() => setState('deny'))
   }, [])
 
-  if (state === 'loading') return <div className="min-h-screen bg-slate-50" />
+  if (state === 'loading')
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    )
   if (state === 'deny') return <Navigate to="/" replace />
   return <>{children}</>
 }

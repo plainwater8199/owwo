@@ -192,3 +192,33 @@ def test_admin_cannot_demote_last_admin(monkeypatch, tmp_path):
     response = client.patch("/api/admin/users/admin", json={"is_admin": False})
 
     assert response.status_code == 403
+
+
+def test_admin_create_rejects_blank_username(monkeypatch, tmp_path):
+    """空/全空格用户名 → 422,不创建脏行(空用户名曾令 DELETE 路由 307→405 删不掉)。"""
+    _fresh_db(monkeypatch, tmp_path)
+    create_user("admin", "pw", is_admin=True)
+    client = TestClient(app)
+    _login(client, "admin", "pw")
+
+    response = client.post(
+        "/api/admin/users", json={"username": "   ", "password": "pw"}
+    )
+
+    assert response.status_code == 422
+    names = {u["username"] for u in client.get("/api/admin/users").json()}
+    assert "" not in names  # 没有落库脏行
+
+
+def test_admin_create_rejects_blank_password(monkeypatch, tmp_path):
+    """空/全空格密码 → 422。"""
+    _fresh_db(monkeypatch, tmp_path)
+    create_user("admin", "pw", is_admin=True)
+    client = TestClient(app)
+    _login(client, "admin", "pw")
+
+    response = client.post(
+        "/api/admin/users", json={"username": "bob", "password": "   "}
+    )
+
+    assert response.status_code == 422

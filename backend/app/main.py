@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.users import (
@@ -54,6 +54,23 @@ class UserCreate(BaseModel):
     username: str
     password: str
     phone: str = ""
+
+    @field_validator("username")
+    @classmethod
+    def _username_non_blank(cls, v: str) -> str:
+        # 拒绝空/全空格并规范化:空用户名会令 DELETE 路由变 /users/(尾斜杠)→ 307→405
+        # 删不掉,曾因此产生删不动的脏行。
+        if not v.strip():
+            raise ValueError("用户名不能为空")
+        return v.strip()
+
+    @field_validator("password")
+    @classmethod
+    def _password_non_blank(cls, v: str) -> str:
+        # 密码不 strip(保留原样),只拒全空格。
+        if not v.strip():
+            raise ValueError("密码不能为空")
+        return v
 
 
 class UserUpdate(BaseModel):

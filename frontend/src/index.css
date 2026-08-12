@@ -1,1 +1,35 @@
 @import "tailwindcss";
+
+/*
+ * Hermes 视觉令牌(从其源码 + @nous-research/ui DS 组件源码提取)。
+ * primary 是奶油色 #ffe6cb(不是翡翠绿);组件全直角;卡片同底 + 奶油边框分隔。
+ * 不设 --radius:owwo 全部组件直角,贴合 Hermes DS。
+ */
+@theme {
+  --color-canvas: #041c1c;
+  --color-fg: #ffe6cb;
+  --color-fg-muted: #ffe6cbcc;
+  --color-fg-subtle: #ffe6cb80;
+  --color-primary: #ffe6cb;
+  --color-primary-fg: #041c1c;
+  --color-success: #4ade80;
+  --color-warning: #ffbd38;
+  --color-danger: #fb2c36;
+  --color-border: #ffe6cb26;
+  --color-border-faint: #ffe6cb13;
+  --font-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    font-size: 15px;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+}
