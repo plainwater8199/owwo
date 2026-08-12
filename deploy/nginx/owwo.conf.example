@@ -28,9 +28,8 @@ server {
 
 # 主站 owwo.cn
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name owwo.cn;
 
     ssl_certificate     /etc/letsencrypt/live/owwo.cn/fullchain.pem;
@@ -56,9 +55,8 @@ server {
 
 # Hermes hermes.owwo.cn(WebSocket 透传)
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name hermes.owwo.cn;
 
     # 单张 SAN 证书覆盖两域名,与主站共用同一份证书路径。
