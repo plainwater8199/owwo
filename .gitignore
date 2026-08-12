@@ -25,3 +25,5 @@ node_modules/
 
 # Claude Code 工作区(本地 agent 状态,不提交)
 .claude/
+*.bak
+*.bak.*
