@@ -1,0 +1,91 @@
+# 宿主机 nginx 配置模板。
+# 复制到 /etc/nginx/conf.d/owwo.conf,按实际证书路径修改后 nginx -t && systemctl reload nginx。
+#
+# 架构:nginx(本机,443 终结 TLS + 域名路由)→ caddy 容器(127.0.0.1:8080 主站 / :8081 Hermes)。
+# 证书路径以 certbot 为例(单张 SAN 证书 certbot -d owwo.cn -d hermes.owwo.cn,存 /etc/letsencrypt/live/owwo.cn/)。
+# 若用 acme.sh 或已有证书管理,用你熟悉的方式签发这两个域名、证书路径填实际位置即可。
+
+# WS Connection 头映射:nginx 官方写法。有 Upgrade 头时透传 "upgrade",无时 "close"
+# (写死 "upgrade" 会让 Hermes 的非 WS 请求也被强加 upgrade 语义,某些客户端异常)。
+map $http_upgrade $owwo_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# 端口 80:ACME http-01 挑战放行 + 其余 301 到 443
+server {
+    listen 80;
+    listen [::]:80;
+    server_name owwo.cn hermes.owwo.cn;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# 主站 owwo.cn
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name owwo.cn;
+
+    ssl_certificate     /etc/letsencrypt/live/owwo.cn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/owwo.cn/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # HSTS:补偿 session cookie 无 Secure 标志的残余风险(SessionMiddleware https_only 默认 False)。
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}
+
+# Hermes hermes.owwo.cn(WebSocket 透传)
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name hermes.owwo.cn;
+
+    # 单张 SAN 证书覆盖两域名,与主站共用同一份证书路径。
+    ssl_certificate     /etc/letsencrypt/live/owwo.cn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/owwo.cn/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket 透传(Hermes PTY 长连)—— 必须,否则 WS 握手在 nginx 层断
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $owwo_connection_upgrade;
+
+        # 长连接:防 nginx 默认 60s 读超时杀 WS
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        proxy_buffering off;
+    }
+}

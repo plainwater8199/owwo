@@ -1,0 +1,44 @@
+{
+	# 本地 dev 关掉 admin API;auto_https off —— TLS 由宿主机 nginx 终结,
+	# Caddy 走纯 plain HTTP(:80/:81 无域名本就不触发自动证书,此处为双保险 + 文档性)。
+	admin off
+	auto_https off
+}
+
+# 主站(容器 80,宿主机经 nginx → 127.0.0.1:8080):公开首页 + /api + /auth-check + /health。
+# 纯端口、无 hostname → Caddy 不尝试签证书。
+:80 {
+	reverse_proxy /health fastapi:8000
+	reverse_proxy /api/* fastapi:8000
+	reverse_proxy /auth-check fastapi:8000
+	reverse_proxy frontend:80
+}
+
+# Hermes(容器 81,宿主机经 nginx → 127.0.0.1:8081)。
+# 用户每个请求先打 fastapi /auth-check(带原始 Cookie):
+#   有效 owwo session → 2xx → 放行,反代到共享网络命名空间里的 loopback hermes
+#   无 session → 302 → 透传给浏览器 → 跳主站 /login?next=<hermes URL>
+:81 {
+	# WebSocket 请求(带 Upgrade 头)绕过 forward_auth 直接反代。
+	# 原因:Caddy forward_auth 会剥离 hop-by-hop 的 Connection/Upgrade 头,
+	# 导致 Hermes 收到普通 GET 而非 WS 握手 → 403。
+	# WS 改由 Hermes 自身 ?token= 认证;token 嵌在根 HTML(受下方 forward_auth 保护)里,安全等价。
+	@ws {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @ws {
+		reverse_proxy 127.0.0.1:9119 {
+			header_up Host 127.0.0.1
+		}
+	}
+	# 非 WS 请求(页面 HTML、REST API):先 forward_auth 校验 owwo session,再反代。
+	handle {
+		forward_auth fastapi:8000 {
+			uri /auth-check
+		}
+		reverse_proxy 127.0.0.1:9119 {
+			header_up Host 127.0.0.1
+		}
+	}
+}

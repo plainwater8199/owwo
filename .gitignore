@@ -10,6 +10,7 @@ __pycache__/
 # Env / secrets
 .env
 .env.*
+!.env.example
 
 # OS / editor
 .DS_Store
@@ -18,3 +19,9 @@ __pycache__/
 
 # App data(运行时 SQLite 库等,不提交)
 /data/
+
+# 依赖(本地 node_modules,不提交;容器内各自安装)
+node_modules/
+
+# Claude Code 工作区(本地 agent 状态,不提交)
+.claude/
