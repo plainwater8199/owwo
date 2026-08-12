@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import TopBar from '../components/TopBar'
+import SiteFooter from '../components/SiteFooter'
 import { HERMES_URL } from '../lib/hermes'
 
 const INPUT =
@@ -89,6 +90,7 @@ export default function Login() {
           </button>
         </form>
       </main>
+      <SiteFooter />
     </div>
   )
 }

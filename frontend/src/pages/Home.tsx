@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import TopBar from '../components/TopBar'
+import SiteFooter from '../components/SiteFooter'
 
 type Me = { username: string; is_admin?: boolean } | null
 
@@ -19,14 +20,15 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-canvas text-fg">
+    <div className="flex min-h-screen flex-col bg-canvas text-fg">
       <TopBar me={loaded ? me : null} />
-      <main className="mx-auto max-w-3xl px-8 py-20">
+      <main className="mx-auto max-w-3xl flex-1 px-8 py-20">
         <h1 className="text-2xl font-bold tracking-tight text-fg">多智能体协作</h1>
         <p className="mt-4 text-base text-fg-muted">
           owwo 让你登录后访问共享的 Hermes —— 一个具备持久记忆与多智能体协作能力的 AI agent。
         </p>
       </main>
+      <SiteFooter />
     </div>
   )
 }
