@@ -11,6 +11,7 @@ function renderAt(initialPath = '/login') {
   const router = createMemoryRouter(
     [
       { path: '/', element: <div data-testid="home">首页</div> },
+      { path: '/admin/users', element: <div data-testid="admin">用户管理</div> },
       { path: '/login', element: <Login /> },
     ],
     { initialEntries: [initialPath] },
@@ -101,5 +102,21 @@ describe('Login 登录页', () => {
     // 非允许域 → 回退到首页(不跳外部)
     await waitFor(() => expect(screen.getByTestId('home')).toBeInTheDocument())
     expect(loc.href).toBe('')
+  })
+
+  it('管理员登录(无 next)跳转到用户管理页', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ username: 'water', is_admin: true }), { status: 200 }),
+      ),
+    )
+    renderAt('/login')
+
+    fireEvent.change(screen.getByLabelText(/用户名/), { target: { value: 'water' } })
+    fireEvent.change(screen.getByLabelText(/密码/), { target: { value: 'water123' } })
+    fireEvent.click(screen.getByRole('button', { name: /登录/ }))
+
+    await waitFor(() => expect(screen.getByTestId('admin')).toBeInTheDocument())
   })
 })

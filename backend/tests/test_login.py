@@ -23,7 +23,7 @@ def test_login_success_sets_session(monkeypatch, tmp_path):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"username": "alice"}
+    assert response.json() == {"username": "alice", "is_admin": False}
     # 签名会话 cookie 已下发(前端据此维持登录态)
     assert "session" in response.cookies
 
@@ -67,4 +67,29 @@ def test_me_with_session_returns_username(monkeypatch, tmp_path):
     response = client.get("/api/me")
 
     assert response.status_code == 200
-    assert response.json() == {"username": "alice"}
+    assert response.json() == {"username": "alice", "is_admin": False}
+
+
+def test_login_returns_is_admin_for_admin(monkeypatch, tmp_path):
+    """admin 用户登录,/api/login 返回 is_admin=True(前端据此分流进管理页)。"""
+    _fresh_db(monkeypatch, tmp_path)
+    create_user("admin", "pw", is_admin=True)
+
+    response = TestClient(app).post(
+        "/api/login", json={"username": "admin", "password": "pw"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_admin"] is True
+
+
+def test_login_disabled_user_returns_403(monkeypatch, tmp_path):
+    """密码正确但账号已禁用 → 403(账号已禁用),不设 session。"""
+    _fresh_db(monkeypatch, tmp_path)
+    create_user("alice", "s3cret", disabled=True)
+
+    response = TestClient(app).post(
+        "/api/login", json={"username": "alice", "password": "s3cret"}
+    )
+
+    assert response.status_code == 403

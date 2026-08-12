@@ -25,3 +25,12 @@ Hermes Agent 的 Web Dashboard 在绑定非 loopback 地址时强制启用自带
 - **Hermes 无 trusted-header SSO(再次确认)**:四个内置 provider(basic / nous / self_hosted / drain)无一信任反代注入的身份头(`X-Forwarded-For` 仅审计 IP)。因此无法用 Caddy 注入身份让 Hermes 放行,只能靠 loopback 绕过其 gate。Hermes 侧裸奔,但只在 caddy 的 loopback 可达——外部任何请求必先过 Caddy forward_auth。
 - **Hermes 校验 Host 头**:绑 127.0.0.1 时,Hermes 要求请求 Host 头 = 绑定 hostname(否则 `400 Invalid Host header`)。Caddy 默认保留原始 Host,故 reverse_proxy 需 `header_up Host 127.0.0.1` 改写。Hermes 的外部接入点已从 `hermes.localhost` 子域改为 `localhost:8081` 端口区分(见 ADR-0002「登录循环修复」:浏览器不把 `Domain=localhost` 的 cookie 发往 `*.localhost` 子域),Host 改写逻辑不变。
 - **loopback 的软认证**:loopback 模式下根 HTML 注入 `__HERMES_SESSION_TOKEN__`(可用 `HERMES_DASHBOARD_SESSION_TOKEN` 固定),SPA 自取用调 API——用户无需在 dashboard 登录。该 token 只是 SPA 内部机制;真正的用户认证全在 owwo session + Caddy forward_auth。
+
+## 实施记录(用户准入 Web 化)
+
+用户准入从 CLI(`python -m app.cli create-user`)升级为 Web 管理页(`/admin/users`)。「不开放注册、管理员手动建号」的准入控制不变,只是入口从命令行变为浏览器:
+
+- **is_admin 区分管理员**:users 表加 `is_admin` 字段。默认管理员 `water/water123` 由 FastAPI lifespan startup 幂等 seed(存在则不动,避免重启覆盖管理员改动;`OWWO_DISABLE_SEED=1` 可跳过)。只有管理员登录后才进入用户管理页(普通用户进首页),前端 `RequireAdmin` 守卫 + 后端 `require_admin` 依赖双保险。
+- **CRUD 字段受限**:管理页只维护用户名/手机号/密码三项(见 CONTEXT.md)。用户名是只读 PK(改用户名会令旧 session 失效);手机号 v1 不强校验;密码由管理员重置(argon2 重 hash,无需验旧密码)。响应模型 `UserOut` 永不含 password_hash。
+- **禁用经 /auth-check 对 Hermes 生效**:`disabled` 用户登录被拒(403);已登录的禁用用户其 owwo session 仍在,但 `/auth-check`(Caddy forward_auth 子请求)查 disabled 后走 302 → 下次点 Hermes 即被踢回登录页。Hermes 的 WebSocket 绕过 forward_auth(见 ADR-0002),故已开的 WS 持续到刷新/重连,可接受。
+- **防锁死**:管理员不能删除/修改自己的账号(自保护)。唯一启用管理员即操作者自己,不能降级/禁用/删自己 → 系统永远至少保留一个启用管理员。

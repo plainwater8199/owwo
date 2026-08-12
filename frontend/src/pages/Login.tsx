@@ -28,15 +28,17 @@ export default function Login() {
       body: JSON.stringify({ username, password }),
     })
     if (res.ok) {
+      const body = await res.json().catch(() => ({}) as { is_admin?: boolean })
       if (next && next.startsWith(HERMES_URL)) {
         window.location.href = next
         return
       }
-      navigate('/')
+      // 无 next:管理员进用户管理页,普通用户进首页(见 CONTEXT.md「管理员」)
+      navigate(body.is_admin ? '/admin/users' : '/')
       return
     }
-    const body = await res.json().catch(() => null)
-    setError(body?.detail ?? '登录失败')
+    const errBody = await res.json().catch(() => null)
+    setError(errBody?.detail ?? '登录失败')
   }
 
   return (
