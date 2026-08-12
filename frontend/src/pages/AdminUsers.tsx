@@ -155,12 +155,17 @@ export default function AdminUsers() {
   }
 
   async function handleDelete(u: User) {
-    if (!window.confirm(`确认删除用户 ${u.username}?`)) return
+    if (
+      !window.confirm(
+        `确认吊销 ${u.username} 的访问权?Hermes 中的数据会保留,其他用户仍可见。`,
+      )
+    )
+      return
     setError('')
     const res = await fetch(`/api/admin/users/${u.username}`, { method: 'DELETE' })
     if (!res.ok) {
       const body = await res.json().catch(() => null)
-      setError(body?.detail ?? '删除失败')
+      setError(body?.detail ?? '吊销失败')
       return
     }
     await load()
@@ -309,7 +314,7 @@ export default function AdminUsers() {
                             编辑
                           </button>
                           <button type="button" onClick={() => handleDelete(u)} className={BTN_DANGER}>
-                            删除
+                            吊销访问权
                           </button>
                         </>
                       )}
