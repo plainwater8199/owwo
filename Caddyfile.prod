@@ -24,8 +24,15 @@
 	# 导致 Hermes 收到普通 GET 而非 WS 握手 → 403。
 	# WS 改由 Hermes 自身 ?token= 认证;token 嵌在根 HTML(受下方 forward_auth 保护)里,安全等价。
 	@ws {
-		header Connection *Upgrade*
-		header Upgrade websocket
+		# 必须用 header_regexp + (?i) 大小写不敏感,不能用 header matcher。
+		# Caddy 的 header matcher 对 VALUE 是大小写敏感的:header Connection *Upgrade*
+		# 只匹配大写 "Upgrade";而宿主 nginx map 的官方写法产出小写 "upgrade"
+		# (proxy_set_header Connection $owwo_connection_upgrade → "upgrade")→ 不匹配
+		# → @ws 不命中 → WS 握手掉进 forward_auth → Caddy 剥离 hop-by-hop Connection/Upgrade 头
+		# → Hermes 收到普通 GET 而非 WS 握手 → 403。
+		# (实战踩坑:直连 Caddy 用大写头返回 101,经 nginx 小写返回 403。)
+		header_regexp Connection (?i)upgrade
+		header_regexp Upgrade (?i)websocket
 	}
 	handle @ws {
 		reverse_proxy 127.0.0.1:9119 {
