@@ -101,3 +101,51 @@ systemctl disable --now deepseek-web                  # 下线服务
 nginx -t && systemctl reload nginx
 # 证书 SAN 多一个无妨(不撤回也不影响续期);node 在 /opt 不动(hermes 软链还指着它)
 ```
+
+---
+
+## 实施记录(2026-08-15 实际部署,与手册的偏差)
+
+已上线并通过 E2E(未登录 302 / 登录 200 / 主站与 hermes 回归 / 线上 bundle 含按钮)。
+版本锁定 `@deepseek-ai/dsh@0.1.0-rc.6`。CentOS 7 新坑(老坑见 NATIVE-HERMES-MIGRATION.md):
+
+1. **npm 26 默认拦截依赖的 install 脚本**(install-scripts 安全特性),5 个包被拦:
+   `npm install-scripts approve <pkg...>` 批准后 `npm rebuild`。
+2. **koffi 预编译加载失败**(GLIBCXX 3.4.20)→ 源码编译要 **cmake**(yum 装的是 2.8):
+   EPEL 装 `cmake3` + `ln -s /usr/bin/cmake3 /usr/local/bin/cmake`。
+   EPEL 原始 metalink 慢,baseurl 改 `mirrors.aliyun.com/epel`。
+3. **node-pty 源码编译**:devtoolset-11 + `npm_config_python`。deepseek 用户没有
+   python3.11,uv 装(astral→GitHub)被墙超时 → 用 SCL 的 **rh-python38**
+   (`/opt/rh/rh-python38/root/usr/bin/python3`,gyp 海象运算符 3.8 就认)。
+4. **sharp 无解,glibc 2.17 硬伤**:dsh-attachment-local 顶层 `import sharp`,
+   sharp ≥0.33 的 @img 预编译 libvips 要求 **GLIBC_2.25**(0.33.5 实测,2.18/2.25 混布),
+   glibc 本体无法垫。GLIBCXX 缺口倒是能用 conda-forge 的 libstdcxx-ng(glibc 2.17 基线,
+   `~/.local` 装的 hermes 版读不到所以放 `/opt/libstdcxx`)+ `LD_LIBRARY_PATH` 补——
+   单元文件里已带,sharp 之外的原生模块兜底用。
+   **方案:stub 掉 `node_modules/sharp`**(只留一个调用时抛错的 ESM 假包):
+   非图片附件照常,图片附件报 INVALID_IMAGE;`npm install`/升级后要重做,
+   见下「日常更新」第 3 步。禁用 attachment-local 插件行是死路——
+   `attachments` 服务是 apiproxy 的硬依赖,禁用会让启动饿死。
+5. **LE API 被墙**:certbot 连 `acme-v02.api.letsencrypt.org` 超时(8/12 还能签)。
+   解法:本机起 mini HTTP CONNECT 代理 + `ssh -R 8123`,服务器
+   `https_proxy=http://127.0.0.1:8123 certbot certonly --webroot ...` 一次过。
+   **续期隐患**:certbot renew 走 cron 时若再被墙会失败(timer 自动重试),
+   收到续期失败告警时用同法手工跑。
+6. npm 26 的 `--prefix` 安装**不建顶层 `bin/`**,启动器在
+   `node_modules/.bin/dsh`(单元 ExecStart 已按此写)。
+7. dsh 首次启动在 `~/.dsh/profiles/web/` 自动初始化 profile(auto-init),
+   会以 deepseek 用户跑 npm(走 ~/.npmrc 的 npmmirror,无碍)。
+
+### 日常更新(修订版)
+
+```bash
+npm view @deepseek-ai/dsh version
+sudo -u deepseek env PATH=/opt/node-v26.7.0-glibc217/bin:$PATH HOME=/home/deepseek \
+  npm install --prefix /home/deepseek/.dsh-app @deepseek-ai/dsh@<版本>
+# 新装依赖若有原生模块:参照上面第 1-3 条(approve + rebuild + devtoolset/python 环境)
+# ⚠ 第 3 步(必做):重做 sharp stub
+sudo -u deepseek bash -c 'cd ~/.dsh-app && rm -rf node_modules/sharp && mkdir -p node_modules/sharp && \
+  printf "{\"name\":\"sharp\",\"version\":\"0.0.0-centos7-stub\",\"type\":\"module\",\"main\":\"index.js\"}" > node_modules/sharp/package.json && \
+  printf "export default function sharp(){throw new Error(\"sharp unavailable on this host (glibc 2.17)\")}\n" > node_modules/sharp/index.js'
+sudo systemctl restart deepseek-web
+```

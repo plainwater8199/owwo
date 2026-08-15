@@ -10,6 +10,9 @@
 #
 # dsh 的 webserver 只接受 127.0.0.1(默认)/0.0.0.0 两种绑定,无自身鉴权——
 # 必须保持 loopback + nginx auth_request 门禁(deploy/nginx/owwo.conf.example)。
+# LD_LIBRARY_PATH=/opt/libstdcxx:conda-forge libstdcxx-ng(GLIBCXX 3.4.29,glibc 2.17
+# 基线),给需要新 GLIBCXX 符号的原生模块兜底;sharp 本身被 stub(glibc 2.25 无解),
+# 见 DEEPSEEK-HARNESS.md 实施记录第 4 条。
 #
 # /etc/deepseek-web.env(root:root 600,按需):
 #   HTTPS_PROXY=...            # 服务器需要代理出网时才写
@@ -28,6 +31,7 @@ WorkingDirectory=/home/deepseek/workspace
 # devtoolset-11 前置以备运行中触发原生模块重编译(node-pty 类)。
 ExecStart=/home/deepseek/.dsh-app/node_modules/.bin/dsh web --port 3080
 Environment=PATH=/opt/node-v26.7.0-glibc217/bin:/opt/rh/devtoolset-11/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=LD_LIBRARY_PATH=/opt/libstdcxx
 Environment=HOME=/home/deepseek
 EnvironmentFile=-/etc/deepseek-web.env
 Restart=on-failure
