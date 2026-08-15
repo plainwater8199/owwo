@@ -5,8 +5,16 @@
 ## Language
 
 **Hermes**:
-本项目集成的 AI agent —— 即 Hermes Agent（Nous Research 的开源、自托管 AI agent），具备持久记忆与多智能体协作能力，是用户登录后实际使用的核心系统。
+本项目集成的 AI agent —— 即 Hermes Agent（Nous Research 的开源、自托管 AI agent），具备持久记忆与多智能体协作能力，是用户登录后实际使用的核心系统。有三个前端共用同一 runtime(同一份 config/sessions/skills):CLI、Dashboard、Desktop App。
 _Avoid_: the agent、AI 助手
+
+**Dashboard**:
+Hermes 自带的 Web 前端,浏览器直接访问;本项目用户登录后用的就是它。
+_Avoid_: 网页客户端、web UI
+
+**Desktop App**:
+Hermes 的 Electron 桌面前端,设计上装在使用者自己带显示器的电脑上,可远程连接服务器上的 agent。本项目不采用,用户一律经 Dashboard 访问。
+_Avoid_: 客户端(泛称,曾引发歧义)
 
 **用户**:
 完成注册与登录、从而获得访问 Hermes 授权的人。所有用户共享同一个 Hermes 实例，彼此不做数据隔离。

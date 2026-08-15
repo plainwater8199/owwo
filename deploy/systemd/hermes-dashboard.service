@@ -1,0 +1,41 @@
+# Hermes Dashboard 的 systemd 单元模板(ADR-0003 原生部署)。
+# 复制到 /etc/systemd/system/hermes-dashboard.service,再把密钥写入
+# /etc/hermes-dashboard.env(见下),然后:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hermes-dashboard
+#
+# gateway 不在此文件:官方安装器 `sudo -u hermes hermes gateway install` 自带
+# systemd 集成(更新后自动重启 gateway),消息平台(Telegram 等)接入由它承载。
+# 本单元只管 dashboard(nginx 反代的 127.0.0.1:9119)。
+#
+# /etc/hermes-dashboard.env(root:root 600,模板):
+#   HERMES_DASHBOARD=1
+#   HERMES_DASHBOARD_HOST=127.0.0.1
+#   HERMES_DASHBOARD_PORT=9119
+#   HERMES_DASHBOARD_SESSION_TOKEN=<openssl rand -hex 32 生成的高熵值>
+#   HERMES_DASHBOARD_PUBLIC_URL=https://hermes.owwo.cn
+#   HERMES_DISABLE_LAZY_INSTALLS=1
+#
+# ⚠ 待部署时验证:HERMES_DASHBOARD_SESSION_TOKEN 在官方环境变量文档中查无此名,
+# 原生 `hermes dashboard` 是否仍认它(以及 WS ?token= 认证是否与 Docker 镜像一致)
+# 必须实测;若不认,查原生模式下最接近的替代(HERMES_DASHBOARD_BASIC_AUTH_SECRET)。
+
+[Unit]
+Description=Hermes Agent Dashboard (web frontend, loopback :9119)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+# 原生安装(per-user 布局)的可执行文件路径;服务用户无交互 shell 登录,
+# PATH 可能不含 ~/.local/bin,故写绝对路径。
+ExecStart=/home/hermes/.local/bin/hermes dashboard
+EnvironmentFile=/etc/hermes-dashboard.env
+Restart=on-failure
+RestartSec=5
+# dashboard 加载 skills 慢,给足启动判定时间,别让 systemd 误杀重启。
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

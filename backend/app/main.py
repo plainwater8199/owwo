@@ -124,17 +124,24 @@ def me(request: Request) -> dict[str, object]:
 
 @app.get("/auth-check")
 def auth_check(request: Request):
-    """Caddy forward_auth 子请求目标:有效 session 放行(200),否则 302 回登录页。
+    """鉴权网关子请求目标:有效 session 放行(200),否则按调用方返回 302/401。
 
-    Caddy 对 Hermes 端口的每个请求先打这里,带上原始 Cookie。
-    返回 2xx → 放行;302 → Caddy 把重定向透传给浏览器 → 跳登录页(带 next 回跳)。
-    有效 session 但用户已被禁用 → 同样 302,让「禁用」对共享 Hermes 生效
+    网关(dev:Caddy forward_auth;prod:nginx auth_request)对 Hermes 端口的
+    每个请求先打这里,带上原始 Cookie。返回 2xx → 放行。
+    有效 session 但用户已被禁用 → 视同未登录,让「禁用」对共享 Hermes 生效
     (禁用用户下次点 Hermes 即被踢回登录)。
+
+    未登录的响应形态由调用方决定:
+    - Caddy forward_auth 透传 3xx → 返回 302 回登录页(带 next 回跳)。
+    - nginx auth_request 只认 2xx/401/403(302 会变 500)→ 带
+      X-OWWO-Auth-Request 头的子请求返回裸 401,由 nginx error_page 接力跳登录页。
     """
     username = request.session.get("username")
     user = get_user(username) if username is not None else None
     if user is not None and not user.disabled:
         return {"status": "ok"}
+    if request.headers.get("x-owwo-auth-request") == "1":
+        raise HTTPException(status_code=401, detail="未登录")
     public_url = os.environ.get("OWWO_PUBLIC_URL", "http://localhost:8080")
     hermes_url = os.environ.get("OWWO_HERMES_URL", "http://localhost:8081")
     return RedirectResponse(

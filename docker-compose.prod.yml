@@ -2,35 +2,18 @@
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 # 与 dev 的 docker-compose.yml 完全独立,不动 dev 配置。
 #
-# 架构:浏览器 → 宿主机 nginx(443,终结 TLS + 域名路由)→ caddy(本容器,鉴权网关)
-#       → fastapi / frontend / hermes。两层代理是必然:Hermes 用 network_mode: service:caddy
-#       共享 caddy 网络命名空间并绑 127.0.0.1:9119(豁免 fail-closed auth gate,见 ADR-0001/0002),
-#       宿主机 nginx 无法共享容器命名空间,故不能去掉 caddy。
+# 架构(ADR-0003):浏览器 → 宿主机 nginx(443,终结 TLS + 域名路由 + auth_request 鉴权)
+#       → fastapi(:8000)/ frontend(:8082)容器 + 原生 Hermes(dashboard 绑 127.0.0.1:9119,
+#       systemd 托管,见 deploy/NATIVE-HERMES-MIGRATION.md)。
+# Hermes 不在本 compose 里:原生装在宿主机上,更新走 `hermes update`。
 services:
-  caddy:
-    # 锁定具体版本:国内 docker registry mirror(daocloud)把 caddy:2 滚动 tag 缓存在
-    # v2.4.6(2021),不含 forward_auth 指令(v2.5.0+ 才有)→ caddy 起不来 → hermes 跟着失败。
-    # 用具体小版本 tag 绕过 mirror 缓存陈旧。
-    image: caddy:2.8.4
-    restart: unless-stopped
-    # 只绑 loopback:外部流量必经宿主机 nginx(443 终结 TLS + 域名路由),
-    # 避免裸 Caddy 端口被绕过鉴权直接打到、cookie 明文传输。
-    ports:
-      - "127.0.0.1:8080:80"
-      - "127.0.0.1:8081:81"
-    volumes:
-      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - fastapi
-      - frontend
-    # 不 depends_on hermes:hermes 依赖 caddy 的网络命名空间,反向依赖会成环。
-    # caddy 先起、hermes 未就绪时 hermes.owwo.cn 短暂 502,hermes 起来即恢复。
-
   fastapi:
     build: ./backend
     restart: unless-stopped
+    # 只绑 loopback:外部流量必经宿主机 nginx(443 终结 TLS + auth_request),
+    # 避免裸 API 端口被绕过鉴权直接打到、cookie 明文传输。
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/data
     environment:
@@ -39,8 +22,8 @@ services:
       - OWWO_SECRET_KEY=${OWWO_SECRET_KEY:?OWWO_SECRET_KEY required in .env}
       # 真实域名:.owwo.cn 跨子域(owwo.cn ↔ hermes.owwo.cn),见 ADR-0002「生产」段。
       - OWWO_SESSION_DOMAIN=.owwo.cn
-      # /auth-check 重定向的登录页基础 URL / forward_auth next= 指向的 Hermes URL。
-      # fastapi 用这两个环境变量构造重定向(不读 X-Forwarded-Proto),故两层代理下 URL 一定是 https://。
+      # /auth-check 重定向的登录页基础 URL / nginx error_page 跳转指向的 Hermes URL。
+      # fastapi 用这两个环境变量构造重定向(不读 X-Forwarded-Proto),故 URL 一定是 https://。
       - OWWO_PUBLIC_URL=https://owwo.cn
       - OWWO_HERMES_URL=https://hermes.owwo.cn
 
@@ -51,29 +34,14 @@ services:
         # 构建期注入(见 frontend/Dockerfile):硬编码 owwo.cn 专属值,非敏感不走 .env。
         VITE_HERMES_URL: https://hermes.owwo.cn
     restart: unless-stopped
+    # 同 fastapi:只绑 loopback,经宿主机 nginx 对外。
+    ports:
+      - "127.0.0.1:8082:80"
 
-  hermes:
-    # 生产建议锁 digest(部署步骤里给命令),避免 :latest 漂移。
-    image: nousresearch/hermes-agent:latest
-    restart: unless-stopped
-    command: gateway run
-    # 共享 caddy 网络命名空间 → dashboard 绑 127.0.0.1 即被 caddy 经 loopback 反代,
-    # 无需(也不能)再发布端口。
-    network_mode: "service:caddy"
-    environment:
-      - HERMES_DASHBOARD=1
-      # 绑 loopback → 豁免 Hermes 的 fail-closed auth gate(无需任何 provider)。
-      - HERMES_DASHBOARD_HOST=127.0.0.1
-      - HERMES_DASHBOARD_PORT=9119
-      # loopback 模式下的唯一软认证:固定 token 嵌在根 HTML 里供 SPA WS 自取。
-      # 生产换高熵随机值(走 .env);泄漏面=已过 forward_auth 者。
-      - HERMES_DASHBOARD_SESSION_TOKEN=${HERMES_DASHBOARD_SESSION_TOKEN:?HERMES_DASHBOARD_SESSION_TOKEN required in .env}
-      - HERMES_DASHBOARD_PUBLIC_URL=https://hermes.owwo.cn
-      - HERMES_DISABLE_LAZY_INSTALLS=1
-    volumes:
-      - hermes_data:/opt/data
-
+# 回滚保险(ADR-0003):Hermes 曾以容器跑在此 compose(数据卷 hermes_data)。
+# 切原生后卷声明保留 —— compose 不会清理已声明的卷,数据( sessions/config/skills )
+# 已迁移到原生侧,此卷是双轨回滚期间的原样快照。回滚 = git checkout 迁移前提交 +
+# docker compose up -d(见 NATIVE-HERMES-MIGRATION.md「回滚」)。稳定后可
+# docker volume rm 手动清掉并删除本声明。
 volumes:
-  caddy_data:
-  caddy_config:
   hermes_data:
