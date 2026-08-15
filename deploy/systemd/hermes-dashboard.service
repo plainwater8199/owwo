@@ -3,8 +3,9 @@
 # /etc/hermes-dashboard.env(见下),然后:
 #   sudo systemctl daemon-reload && sudo systemctl enable --now hermes-dashboard
 #
-# gateway 不在此文件:官方安装器 `sudo -u hermes hermes gateway install` 自带
-# systemd 集成(更新后自动重启 gateway),消息平台(Telegram 等)接入由它承载。
+# gateway 不在此文件:官方安装器自带 systemd 集成(更新后自动重启 gateway),
+# 消息平台接入由它承载。CentOS 7(systemd 219 缺 user@.service)用系统级安装:
+#   sudo /home/hermes/.local/bin/hermes gateway install --system --run-as-user hermes --no-start-now
 # 本单元只管 dashboard(nginx 反代的 127.0.0.1:9119)。
 #
 # /etc/hermes-dashboard.env(root:root 600,模板):
@@ -15,9 +16,10 @@
 #   HERMES_DASHBOARD_PUBLIC_URL=https://hermes.owwo.cn
 #   HERMES_DISABLE_LAZY_INSTALLS=1
 #
-# ⚠ 待部署时验证:HERMES_DASHBOARD_SESSION_TOKEN 在官方环境变量文档中查无此名,
-# 原生 `hermes dashboard` 是否仍认它(以及 WS ?token= 认证是否与 Docker 镜像一致)
-# 必须实测;若不认,查原生模式下最接近的替代(HERMES_DASHBOARD_BASIC_AUTH_SECRET)。
+# ✅ 已验证(2026-08-15):原生 `hermes dashboard` 认 HERMES_DASHBOARD_SESSION_TOKEN,
+# WS ?token= 握手 101。另:dashboard 启动会校验 web 前端构建产物 + 内容哈希 stamp,
+# CentOS 7 无 node 时用 /usr/local/bin/hermes-web-build(hermes 镜像内构建)重建,
+# 见 NATIVE-HERMES-MIGRATION.md 实施记录第 5 条。
 
 [Unit]
 Description=Hermes Agent Dashboard (web frontend, loopback :9119)

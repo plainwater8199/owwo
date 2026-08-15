@@ -189,6 +189,49 @@ sudo -u hermes hermes update           # 快照 → git pull → 语法校验(�
 
 - dashboard 单元不会自动重启,升级涉及 dashboard 的版本后手动
   `sudo systemctl restart hermes-dashboard`。
+- **CentOS 7(本机)更新后必须重建 dashboard 前端**(见下方实施记录 5):
+  `sudo /usr/local/bin/hermes-web-build && sudo systemctl restart hermes-dashboard`
 - 手动回退版本:`sudo -u hermes git -C ~hermes/.hermes/hermes-agent checkout vX.Y.Z && \
-  sudo -u hermes uv pip install -e ".[all]" && sudo systemctl restart hermes-dashboard`
+  sudo -u hermes env CFLAGS=-std=gnu99 ~hermes/.hermes/bin/uv pip install --python ~hermes/.hermes/hermes-agent/venv/bin/python -e '.[all]' && sudo systemctl restart hermes-dashboard`
 - 日志:`sudo journalctl -u hermes-dashboard -f`;gateway 日志在 `~hermes/.hermes/logs/`。
+
+---
+
+## 实施记录(2026-08-15 实际切换,与手册的偏差)
+
+已切换成功并通过全部验证(302/200/101/gateway 3 平台 weixin+webhook+email)。
+**`HERMES_DASHBOARD_SESSION_TOKEN` 原生 dashboard 认可**(`hermes dashboard` 读该 env,
+WS `?token=` 握手 101)——手册步骤 5 的待验证项已闭环。以下为 CentOS 7 实战坑:
+
+1. **安装器必须在家目录跑**:`sudo -u hermes bash -c '...'` 继承 cwd=/root 时,
+   uv 向上找 venv 会撞 `/root/.venv` 权限拒绝。必须先 `cd ~hermes`。
+2. **nodejs.org 直连超时 + CentOS 7 glibc 2.17 跑不了官方 Node 26**:
+   装 `--skip-browser --skip-computer-use --skip-setup`;node 下载失败只是优雅降级,
+   不阻塞安装(烧 5 分钟 curl 超时后继续)。浏览器/WhatsApp 桥等 node 功能不可用——
+   本机不需要。
+3. **pillow 源码构建双坑**:新 pillow 只有 manylinux_2_28 wheel(glibc 2.28+),
+   CentOS 7 退回 sdist;gcc 4.8 默认 gnu89 → 需 `yum install zlib-devel libjpeg-devel`
+   (镜像还活着)+ `CFLAGS=-std=gnu99`。装完后手动补装全部依赖并建入口软链:
+   ```bash
+   cd ~hermes/.hermes/hermes-agent
+   sudo -u hermes env CFLAGS=-std=gnu99 ~hermes/.hermes/bin/uv pip install \
+     --python venv/bin/python -e '.[all]'
+   sudo -u hermes ln -sf ~hermes/.hermes/hermes-agent/venv/bin/hermes ~hermes/.local/bin/hermes
+   ```
+4. **systemd 219 缺 user@.service 模板**(本机被裁剪),`--user` 单元装不了:
+   gateway 改用系统级 `hermes gateway install --system --run-as-user hermes`(root 执行,
+   服务文件 /etc/systemd/system/hermes-gateway.service,Unit 段的 StartLimitIntervalSec
+   在 219 上报 Unknown lvalue 警告,无害)。dashboard 单元本来就是系统级,不受影响。
+5. **dashboard 前端要构建 + stamp**:Docker 镜像里 web_dist 是预编译的,原生安装不含。
+   `hermes dashboard` 检查 `hermes_cli/web_dist/` + `~/.hermes/web-ui-build-stamp.json`
+   (web/ 源码内容哈希)。CentOS 7 无 node → **用现成 hermes Docker 镜像当构建器**
+   (monorepo,须从仓库根 `npm install --workspace web`),已固化为
+   `/usr/local/bin/hermes-web-build`(构建 + 写 stamp)。`hermes update` 改了 web 源码后
+   必须重跑它,否则 dashboard 因哈希不匹配拒绝启动。
+6. **数据迁移细节**:容器内 hermes 是 uid 10000,宿主 hermes 是 1000,拷完必须
+   `chown -R hermes:hermes`。新 compose 已无 hermes 服务,停旧容器用
+   `docker stop owwo-hermes-1`(不是 compose stop)。
+7. **webhook 平台监听 `*:8644` 全接口**:Docker 时代在容器网内,原生后直接暴露宿主。
+   本机 firewalld inactive 但云安全组已挡(外网 000 超时)。若安全组放行过 8644 需收回。
+8. 杂项:老 curl 无 `--http1.1` 选项(默认本就是 1.1);git 1.8.3.1 但够用;
+   nginx 模板一次通过 `nginx -t`。
