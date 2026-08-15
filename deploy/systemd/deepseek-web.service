@@ -4,7 +4,8 @@
 #
 # 隔离设计(见 deploy/DEEPSEEK-HARNESS.md):专用用户 deepseek,工作区
 # /home/deepseek/workspace,与 Hermes(用户 hermes)互不可读对方家目录。
-# dsh 二进制装在 ~deepseek/.dsh-app(npm --prefix,锁定版本),Node 用
+# dsh 二进制装在 ~deepseek/.dsh-app(npm --prefix,锁定版本;npm 26 的 --prefix
+# 不建顶层 bin/,启动器在 node_modules/.bin/dsh),Node 用
 # /opt/node-v26.7.0-glibc217 共享二进制(glibc-217 变体,CentOS 7 唯一能跑的新 Node)。
 #
 # dsh 的 webserver 只接受 127.0.0.1(默认)/0.0.0.0 两种绑定,无自身鉴权——
@@ -25,7 +26,7 @@ Group=deepseek
 WorkingDirectory=/home/deepseek/workspace
 # bin 脚本 shebang 是 #!/usr/bin/env node,PATH 必须含共享 Node;
 # devtoolset-11 前置以备运行中触发原生模块重编译(node-pty 类)。
-ExecStart=/home/deepseek/.dsh-app/bin/dsh web --port 3080
+ExecStart=/home/deepseek/.dsh-app/node_modules/.bin/dsh web --port 3080
 Environment=PATH=/opt/node-v26.7.0-glibc217/bin:/opt/rh/devtoolset-11/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 Environment=HOME=/home/deepseek
 EnvironmentFile=-/etc/deepseek-web.env
