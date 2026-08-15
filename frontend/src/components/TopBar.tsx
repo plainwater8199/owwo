@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom'
-import { HERMES_URL } from '../lib/hermes'
+import { DEEPSEEK_URL, HERMES_URL } from '../lib/urls'
 
 /**
  * me 三态:
- *  - {username, is_admin?}:已登录 → 「已登录:{username}」+(管理员额外显示「用户管理」)+「进入 Hermes」主按钮
+ *  - {username, is_admin?}:已登录 → 「已登录:{username}」+(管理员额外显示「用户管理」)
+ *    +「进入 Hermes」主按钮 +「进入 DeepSeek」次按钮
  *  - null:明确未登录(Home 查过 /api/me)→ 「登录」主按钮(Link 到 /login)
- *  - undefined:不关心登录态(AdminUsers,守卫已保证是管理员)→ 「进入 Hermes」主按钮
+ *  - undefined:不关心登录态(AdminUsers,守卫已保证是管理员)→ 两个 agent 入口按钮
  * brandOnly(Login)→ 仅「owwo」wordmark,右侧不放任何 link,
  * 避免出现「登录」文字与登录表单提交按钮在按名查找时撞车。
  */
@@ -37,9 +38,14 @@ export default function TopBar({
               登录
             </Link>
           ) : (
-            <a href={HERMES_URL} className={PRIMARY_BTN}>
-              进入 Hermes
-            </a>
+            <>
+              <a href={HERMES_URL} className={PRIMARY_BTN}>
+                进入 Hermes
+              </a>
+              <a href={DEEPSEEK_URL} className={GHOST_BTN}>
+                进入 DeepSeek
+              </a>
+            </>
           )}
         </div>
       )}

@@ -33,6 +33,7 @@ services:
       args:
         # 构建期注入(见 frontend/Dockerfile):硬编码 owwo.cn 专属值,非敏感不走 .env。
         VITE_HERMES_URL: https://hermes.owwo.cn
+        VITE_DEEPSEEK_URL: https://deepseek.owwo.cn
     restart: unless-stopped
     # 同 fastapi:只绑 loopback,经宿主机 nginx 对外。
     ports:

@@ -3,9 +3,12 @@
 #
 # 架构:nginx(本机,443 终结 TLS + 域名路由 + auth_request 鉴权)
 #       → fastapi 容器(127.0.0.1:8000)/ frontend 容器(127.0.0.1:8082)
-#       → 原生 Hermes dashboard(127.0.0.1:9119,systemd 托管,专用用户 hermes)。
-# 证书路径以 certbot 为例(单张 SAN 证书 certbot -d owwo.cn -d hermes.owwo.cn,存 /etc/letsencrypt/live/owwo.cn/)。
-# 若用 acme.sh 或已有证书管理,用你熟悉的方式签发这两个域名、证书路径填实际位置即可。
+#       → 原生 Hermes dashboard(127.0.0.1:9119,systemd 托管,专用用户 hermes)
+#       → 原生 DeepSeek Harness Web UI(127.0.0.1:3080,systemd 托管,专用用户 deepseek,
+#         与 Hermes 用户/工作区完全隔离,见 deploy/DEEPSEEK-HARNESS.md)。
+# 证书路径以 certbot 为例(单张 SAN 证书 certbot -d owwo.cn -d hermes.owwo.cn -d deepseek.owwo.cn,
+# 存 /etc/letsencrypt/live/owwo.cn/)。
+# 若用 acme.sh 或已有证书管理,用你熟悉的方式签发这些域名、证书路径填实际位置即可。
 
 # WS Connection 头映射:nginx 官方写法。有 Upgrade 头时透传 "upgrade",无时 "close"
 # (写死 "upgrade" 会让 Hermes 的非 WS 请求也被强加 upgrade 语义,某些客户端异常)。
@@ -18,7 +21,7 @@ map $http_upgrade $owwo_connection_upgrade {
 server {
     listen 80;
     listen [::]:80;
-    server_name owwo.cn hermes.owwo.cn;
+    server_name owwo.cn hermes.owwo.cn deepseek.owwo.cn;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -132,6 +135,62 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
 
         # 长连接:防 nginx 默认 60s 读超时杀 WS
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        proxy_buffering off;
+    }
+}
+
+# DeepSeek Harness deepseek.owwo.cn:与 Hermes 同款 auth_request 门禁。
+# dsh Web UI 自身无任何鉴权/origin 策略(dsh-host-webserver 只绑 loopback 或 0.0.0.0,
+# 无 TLS 无认证),所以外层门禁是唯一防线 —— 本块必须先于公网暴露存在。
+# 与 Hermes 块的差异:不需要 Host/Origin 改写(dsh 不做 loopback 校验,
+# 浏览器视角 deepseek.owwo.cn 本就是同源,WS 无 CORS 问题),标准反代头即可。
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name deepseek.owwo.cn;
+
+    ssl_certificate     /etc/letsencrypt/live/owwo.cn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/owwo.cn/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    error_page 401 = @deepseek_login;
+
+    location = /_auth {
+        internal;
+        proxy_pass http://127.0.0.1:8000/auth-check;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header X-OWWO-Auth-Request 1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location @deepseek_login {
+        return 302 https://owwo.cn/login?next=$scheme://$host$request_uri;
+    }
+
+    location / {
+        auth_request /_auth;
+
+        proxy_pass http://127.0.0.1:3080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket 透传(dsh 会话/SSE 长连)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $owwo_connection_upgrade;
+
         proxy_read_timeout 86400s;
         proxy_send_timeout 86400s;
         proxy_buffering off;

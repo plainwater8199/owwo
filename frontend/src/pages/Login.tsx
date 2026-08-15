@@ -2,14 +2,15 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import TopBar from '../components/TopBar'
 import SiteFooter from '../components/SiteFooter'
-import { HERMES_URL } from '../lib/hermes'
+import { AGENT_ENTRY_URLS } from '../lib/urls'
 
 const INPUT =
   'mt-2 h-9 w-full border border-border bg-canvas/40 px-3 py-1 font-mono text-sm text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/25'
 
 /**
  * 登录页。提交 → POST /api/login →
- *  - 有合法 ?next=(Caddy forward_auth 拦下未登录时带上的 Hermes 回跳地址)→ 跳该外部 URL
+ *  - 有合法 ?next=(nginx auth_request 拦下未登录访问时带上的 agent 子域回跳地址,
+ *    见 lib/urls.ts AGENT_ENTRY_URLS 白名单)→ 跳该外部 URL
  *  - 否则 → 管理员进用户管理页 / 普通用户进首页(见 CONTEXT.md「管理员」)
  * 失败显错。会话 cookie 由后端(Starlette SessionMiddleware)下发并签名。
  */
@@ -31,7 +32,7 @@ export default function Login() {
     })
     if (res.ok) {
       const body = await res.json().catch(() => ({}) as { is_admin?: boolean })
-      if (next && next.startsWith(HERMES_URL)) {
+      if (next && AGENT_ENTRY_URLS.some((url) => next.startsWith(url))) {
         window.location.href = next
         return
       }
