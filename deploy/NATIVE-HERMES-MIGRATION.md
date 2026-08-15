@@ -235,3 +235,35 @@ WS `?token=` 握手 101)——手册步骤 5 的待验证项已闭环。以下�
    本机 firewalld inactive 但云安全组已挡(外网 000 超时)。若安全组放行过 8644 需收回。
 8. 杂项:老 curl 无 `--http1.1` 选项(默认本就是 1.1);git 1.8.3.1 但够用;
    nginx 模板一次通过 `nginx -t`。
+
+## 实施记录补充(2026-08-15 晚:Dashboard 聊天修复)
+
+切换后用户报「不能对话」。**根因:dashboard 的聊天(/chat 标签)是 PTY 里 spawn 的
+TUI(基于 Node/Ink)跑的,node 是运行时依赖,不只是构建期**。缺 node 时 PTY 里只回一行
+`Chat unavailable: npm not found`(journalctl 里搜 `Chat unavailable` 可见)。
+镜像里不带 `hermes_cli/tui_dist/` 预编译产物,必须源码装。修复链(CentOS 7):
+
+1. **兼容 Node**:官方 Node 26 二进制要 glibc 2.28,用 unofficial-builds 的
+   `linux-x64-glibc-217` 变体(服务器直连超时,本机下载后 scp):
+   ```bash
+   # 本机: curl -LO https://unofficial-builds.nodejs.org/download/release/v26.7.0/node-v26.7.0-linux-x64-glibc-217.tar.xz && scp ... owwo:/tmp/
+   # 服务器: tar xf ... && rm -rf ~hermes/.hermes/node && mv node-v26.7.0-* ~hermes/.hermes/node && chown -R hermes:hermes ~hermes/.hermes/node
+   ```
+   装在 `$HERMES_HOME/node` 是安装器的「Hermes-managed Node」标准位置,
+   `find_node_executable()` 自动发现,无需改 PATH。
+2. **TUI 依赖三连坑**(`npm install --workspaces`):
+   - gyp 的 Python 代码用 `:=` 海象运算符,系统 python3 是 3.6.8 → 必须
+     `npm_config_python=/home/hermes/.local/bin/python3.11`(uv 装的);
+   - node-pty 1.1.0 源码编译要 `-std=gnu++20`,gcc 4.8 不行 → 加 aliyun SCL
+     vault 源(`/etc/yum.repos.d/centos-sclo.repo`,
+     `baseurl=https://mirrors.aliyun.com/centos/7/sclo/x86_64/rh/`)装
+     devtoolset-11,PATH 前置 `/opt/rh/devtoolset-11/root/usr/bin`;
+   - node-gyp 下 headers 走 unofficial-builds(超时)→
+     `npm_config_disturl=https://npmmirror.com/mirrors/node`(headers 与 glibc 变体无关);
+   - 还需 `yum install gcc-c++`(base 源)。
+3. **持久化**(防 `hermes update` 后重装再踩):
+   - `~hermes/.npmrc`:registry/python/disturl 三项(见上);
+   - `/etc/hermes-dashboard.env` 首行 `PATH=/opt/rh/devtoolset-11/root/usr/bin:/home/hermes/.hermes/node/bin:...`
+     ——dashboard spawn TUI/npm 时继承。
+4. **验证**:PTY WS 连 20s,收到 29KB 终端帧(TUI 横幅渲染)、无 `Chat unavailable`;
+   回归 302/200/101 全过。浏览器端建议用户实测打字对话。
