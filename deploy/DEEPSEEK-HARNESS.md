@@ -147,6 +147,12 @@ nginx -t && systemctl reload nginx
    `node_modules/.bin/dsh`(单元 ExecStart 已按此写)。
 7. dsh 首次启动在 `~/.dsh/profiles/web/` 自动初始化 profile(auto-init),
    会以 deepseek 用户跑 npm(走 ~/.npmrc 的 npmmirror,无碍)。
+8. **trusted-host 栅栏(2026-08-16 修)**:dsh 的 client-connection 对 `/api/*` 做
+   Host 校验,只放行 loopback;经域名反代(Host=deepseek.owwo.cn)时**页面能开、
+   所有 API 一律 403**(「加载提供方目录失败: transport failure for /api/llm.providers」)。
+   解法:单元 ExecStart 加 `--trusted-host deepseek.owwo.cn`(实现是裸 `host[:port]`
+   字符串比较,DNS 名可用);Origin 走同源校验,浏览器视角本就同源,自然通过。
+   nginx 侧不需要改写 Host。
 
 ### 日常更新(修订版)
 
