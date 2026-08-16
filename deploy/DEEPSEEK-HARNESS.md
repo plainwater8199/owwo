@@ -153,6 +153,21 @@ nginx -t && systemctl reload nginx
    解法:单元 ExecStart 加 `--trusted-host deepseek.owwo.cn`(实现是裸 `host[:port]`
    字符串比较,DNS 名可用);Origin 走同源校验,浏览器视角本就同源,自然通过。
    nginx 侧不需要改写 Host。
+9. **特权方法第二道闸(2026-08-16 修,一行补丁)**:第 8 条只放开了普通路由;
+   `PRIVILEGED_METHODS`(settings.*、credentials.*、llm.discoverModels、
+   agentPreset.read 等)在源码里**写死空信任表**(`isTrustedApiRequest(request, [])`,
+   不吃 --trusted-host)——症状:设置页 403(`transport failure for
+   /api/settings.describe`),无法经 UI 填 API key。补丁(dsh-client-connection/
+   lib/index.js,把空表换成闭包里的 trustedHosts):
+   ```bash
+   F=~deepseek/.dsh-app/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
+   sed -i "s|PRIVILEGED_METHODS.has(method) && !isTrustedApiRequest(request, \[\])|PRIVILEGED_METHODS.has(method) \&\& !isTrustedApiRequest(request, trustedHosts)|" $F
+   systemctl restart deepseek-web
+   ```
+   **安全边界(改前核过源码)**:`credentials.describe` 只回元数据
+   (configured/source/writable),**key 值永不回传浏览器**;放开后登录用户能
+   set/unset key 与改 settings——与共享 agent 信任模型一致。
+   ⚠ 与 sharp 产物同理:**npm install / dsh 升级后必须重打**(日常更新加一步)。
 
 ### 日常更新(修订版)
 
