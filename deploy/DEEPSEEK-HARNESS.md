@@ -117,15 +117,27 @@ nginx -t && systemctl reload nginx
 3. **node-pty 源码编译**:devtoolset-11 + `npm_config_python`。deepseek 用户没有
    python3.11,uv 装(astral→GitHub)被墙超时 → 用 SCL 的 **rh-python38**
    (`/opt/rh/rh-python38/root/usr/bin/python3`,gyp 海象运算符 3.8 就认)。
-4. **sharp 无解,glibc 2.17 硬伤**:dsh-attachment-local 顶层 `import sharp`,
-   sharp ≥0.33 的 @img 预编译 libvips 要求 **GLIBC_2.25**(0.33.5 实测,2.18/2.25 混布),
-   glibc 本体无法垫。GLIBCXX 缺口倒是能用 conda-forge 的 libstdcxx-ng(glibc 2.17 基线,
-   `~/.local` 装的 hermes 版读不到所以放 `/opt/libstdcxx`)+ `LD_LIBRARY_PATH` 补——
-   单元文件里已带,sharp 之外的原生模块兜底用。
-   **方案:stub 掉 `node_modules/sharp`**(只留一个调用时抛错的 ESM 假包):
-   非图片附件照常,图片附件报 INVALID_IMAGE;`npm install`/升级后要重做,
-   见下「日常更新」第 3 步。禁用 attachment-local 插件行是死路——
-   `attachments` 服务是 apiproxy 的硬依赖,禁用会让启动饿死。
+4. **sharp:glibc 2.17 唯一可行路线 = 锁 0.32.6 + 手放预编译产物**(2026-08-16 已修复上线):
+   - 根因:sharp ≥0.33 只发 @img 预编译,libvips 要 GLIBC_2.25/2.27(glibc 本体垫不了);
+     dsh-attachment-local 顶层 import sharp 且 `attachments` 服务被 apiproxy 硬依赖
+     (禁用插件行会让启动饿死,试过,死路)。
+   - 解法:sharp **0.32.6** 时代的预编译是 glibc 2.17 基线(实测 libvips 8.14.2
+     最高只要 GLIBC_2.17、GLIBCXX_3.4.15,系统原生满足,连 libstdcxx 都不用垫):
+     ① `npm pkg set dependencies.sharp=0.32.6 overrides.sharp=0.32.6` + `npm install`;
+     ② 从 npmmirror 镜像手动下载两个产物(安装脚本走 GitHub 会超时):
+        - 绑定:`cdn.npmmirror.com/binaries/sharp/v0.32.6/sharp-v0.32.6-napi-v7-linux-x64.tar.gz`
+          → 解出 `build/Release/sharp-linux-x64.node` 放 `node_modules/sharp/build/Release/`
+          (绑定自带 RPATH `$ORIGIN/../../vendor/8.14.5/linux-x64/lib`)
+        - libvips:`cdn.npmmirror.com/binaries/sharp-libvips/v8.14.2/libvips-8.14.2-linux-x64.tar.gz`
+          → 解出 `lib/` 放 `node_modules/sharp/vendor/8.14.5/linux-x64/lib/`
+          (⚠ 目录名必须是 **8.14.5**(0.32.6 的 RPATH/config 写死);8.14.2 的库 ABI
+          同为 libvips-cpp.so.42,实测加载+渲染正常;镜像无正式 8.14.5 linux-x64 资产)
+     ③ **删嵌套真包**:npm 会给 dsh-attachment-local(optional 依赖)在
+        `node_modules/@deepseek-ai/dsh-attachment-local/node_modules/sharp` 装 0.35.3,
+        Node 解析优先嵌套 → 必删;顺手删 `node_modules/@img`(0.35 的残留)。
+     ④ 验证:`node -e 'sharp({create:{...}}).png().toBuffer()'` 出字节数即成。
+   - GLIBCXX 兜底(其他原生模块如 koffi 用):conda-forge libstdcxx-ng 11.2.0 装在
+     `/opt/libstdcxx`(glibc 2.17 基线),单元 `LD_LIBRARY_PATH=/opt/libstdcxx`。
 5. **LE API 被墙**:certbot 连 `acme-v02.api.letsencrypt.org` 超时(8/12 还能签)。
    解法:本机起 mini HTTP CONNECT 代理 + `ssh -R 8123`,服务器
    `https_proxy=http://127.0.0.1:8123 certbot certonly --webroot ...` 一次过。
@@ -143,9 +155,17 @@ npm view @deepseek-ai/dsh version
 sudo -u deepseek env PATH=/opt/node-v26.7.0-glibc217/bin:$PATH HOME=/home/deepseek \
   npm install --prefix /home/deepseek/.dsh-app @deepseek-ai/dsh@<版本>
 # 新装依赖若有原生模块:参照上面第 1-3 条(approve + rebuild + devtoolset/python 环境)
-# ⚠ 第 3 步(必做):重做 sharp stub
-sudo -u deepseek bash -c 'cd ~/.dsh-app && rm -rf node_modules/sharp && mkdir -p node_modules/sharp && \
-  printf "{\"name\":\"sharp\",\"version\":\"0.0.0-centos7-stub\",\"type\":\"module\",\"main\":\"index.js\"}" > node_modules/sharp/package.json && \
-  printf "export default function sharp(){throw new Error(\"sharp unavailable on this host (glibc 2.17)\")}\n" > node_modules/sharp/index.js'
+# ⚠ sharp 修复必须重做(实施记录第 4 条):npm install 会重置 node_modules/sharp——
+#   重放绑定+vendor 产物、删嵌套真包、再验证渲染:
+SHARP=/home/deepseek/.dsh-app/node_modules/sharp
+sudo -u deepseek mkdir -p $SHARP/build/Release $SHARP/vendor/8.14.5/linux-x64
+sudo -u deepseek cp /opt/dsh-prebuilt/sharp-linux-x64.node $SHARP/build/Release/          # 预下载存此,见下
+sudo -u deepseek cp -a /opt/dsh-prebuilt/libvips-lib $SHARP/vendor/8.14.5/linux-x64/lib/
+find /home/deepseek/.dsh-app/node_modules -mindepth 2 -type d -path "*node_modules/sharp" \
+  ! -path "$SHARP" | xargs -r rm -rf
+find /home/deepseek/.dsh-app/node_modules -maxdepth 4 -type d -path "*node_modules/@img" | xargs -r rm -rf
 sudo systemctl restart deepseek-web
 ```
+
+> 两个产物持久化在服务器 `/opt/dsh-prebuilt/`(绑定 .node + libvips lib/ 目录,
+> root 所有 755),升级后从那里重放,不用再走镜像下载。
