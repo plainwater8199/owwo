@@ -23,7 +23,8 @@ export default function Home() {
     <div className="flex min-h-screen flex-col bg-canvas text-fg">
       <TopBar me={loaded ? me : null} />
       <main className="mx-auto max-w-3xl flex-1 px-8 py-20">
-        <h1 className="text-2xl font-bold tracking-tight text-fg">多智能体协作</h1>
+        <img src="/owwo-badge.svg" alt="OWWO" width="96" height="96" className="h-24 w-24" />
+        <h1 className="mt-6 text-2xl font-bold tracking-tight text-fg">多智能体协作</h1>
         <p className="mt-4 text-base text-fg-muted">
           owwo 让你登录后访问共享的 Hermes —— 一个具备持久记忆与多智能体协作能力的 AI agent。
         </p>

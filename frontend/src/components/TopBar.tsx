@@ -24,7 +24,10 @@ export default function TopBar({
 }) {
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-canvas px-6">
-      <span className="font-bold uppercase tracking-[0.05em] text-fg">owwo</span>
+      <span className="flex items-center gap-2">
+        <img src="/favicon.svg" alt="" width="24" height="24" className="h-6 w-6" />
+        <span className="font-bold uppercase tracking-[0.05em] text-fg">owwo</span>
+      </span>
       {brandOnly ? null : (
         <div className="flex items-center gap-4">
           {me ? <span className="text-sm text-fg-muted">已登录:{me.username}</span> : null}

@@ -11,7 +11,8 @@ export default function SiteFooter() {
   return (
     <footer className="border-t border-border bg-canvas">
       <div className="mx-auto flex max-w-3xl flex-col gap-2 px-8 py-5 text-sm text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
-        <p className="text-fg-muted">
+        <p className="flex items-center gap-2 text-fg-muted">
+          <img src="/favicon.svg" alt="" width="16" height="16" className="h-4 w-4" />
           <span className="font-bold text-fg">OWWO实验室</span> · 一个专注 AGENT 智能体自研学习空间
         </p>
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
