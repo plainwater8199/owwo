@@ -1,0 +1,45 @@
+# DeepSeek Harness Web UI 的 systemd 单元(与 hermes-dashboard.service 同模式)。
+# 复制到 /etc/systemd/system/deepseek-web.service,密钥/环境写 /etc/deepseek-web.env,
+# 然后: sudo systemctl daemon-reload && sudo systemctl enable --now deepseek-web
+#
+# 隔离设计(见 deploy/DEEPSEEK-HARNESS.md):专用用户 deepseek,工作区
+# /home/deepseek/workspace,与 Hermes(用户 hermes)互不可读对方家目录。
+# dsh 二进制装在 ~deepseek/.dsh-app(npm --prefix,锁定版本;npm 26 的 --prefix
+# 不建顶层 bin/,启动器在 node_modules/.bin/dsh),Node 用
+# /opt/node-v26.7.0-glibc217 共享二进制(glibc-217 变体,CentOS 7 唯一能跑的新 Node)。
+#
+# dsh 的 webserver 只接受 127.0.0.1(默认)/0.0.0.0 两种绑定,无自身鉴权——
+# 必须保持 loopback + nginx auth_request 门禁(deploy/nginx/owwo.conf.example)。
+# --trusted-host:dsh 的 trusted-host 栅栏只放行 loopback Host,经 deepseek.owwo.cn
+# 反代进来的请求(Host=域名)会被 /api/* 一律 403(页面能开、API 全挂)。加上外域
+# Host 白名单;Origin 走同源校验,浏览器视角本就同源,自然通过。
+# LD_LIBRARY_PATH=/opt/libstdcxx:conda-forge libstdcxx-ng(GLIBCXX 3.4.29,glibc 2.17
+# 基线),给需要新 GLIBCXX 符号的原生模块兜底;sharp 本身被 stub(glibc 2.25 无解),
+# 见 DEEPSEEK-HARNESS.md 实施记录第 4 条。
+#
+# /etc/deepseek-web.env(root:root 600,按需):
+#   HTTPS_PROXY=...            # 服务器需要代理出网时才写
+[Unit]
+Description=DeepSeek Harness Web UI (loopback :3080)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deepseek
+Group=deepseek
+# dsh 把启动目录当默认工作区根;Web UI 里再添加/选中工作区。
+WorkingDirectory=/home/deepseek/workspace
+# bin 脚本 shebang 是 #!/usr/bin/env node,PATH 必须含共享 Node;
+# devtoolset-11 前置以备运行中触发原生模块重编译(node-pty 类)。
+ExecStart=/home/deepseek/.dsh-app/node_modules/.bin/dsh web --port 3080 --trusted-host deepseek.owwo.cn
+Environment=PATH=/opt/node-v26.7.0-glibc217/bin:/opt/rh/devtoolset-11/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=LD_LIBRARY_PATH=/opt/libstdcxx
+Environment=HOME=/home/deepseek
+EnvironmentFile=-/etc/deepseek-web.env
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

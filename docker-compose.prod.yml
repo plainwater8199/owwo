@@ -1,0 +1,48 @@
+# 生产栈。用法:
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+# 与 dev 的 docker-compose.yml 完全独立,不动 dev 配置。
+#
+# 架构(ADR-0003):浏览器 → 宿主机 nginx(443,终结 TLS + 域名路由 + auth_request 鉴权)
+#       → fastapi(:8000)/ frontend(:8082)容器 + 原生 Hermes(dashboard 绑 127.0.0.1:9119,
+#       systemd 托管,见 deploy/NATIVE-HERMES-MIGRATION.md)。
+# Hermes 不在本 compose 里:原生装在宿主机上,更新走 `hermes update`。
+services:
+  fastapi:
+    build: ./backend
+    restart: unless-stopped
+    # 只绑 loopback:外部流量必经宿主机 nginx(443 终结 TLS + auth_request),
+    # 避免裸 API 端口被绕过鉴权直接打到、cookie 明文传输。
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - OWWO_DB_PATH=/data/owwo.db
+      # 密钥走 .env 插值,:? 强制必填(缺失直接 fail)。
+      - OWWO_SECRET_KEY=${OWWO_SECRET_KEY:?OWWO_SECRET_KEY required in .env}
+      # 真实域名:.owwo.cn 跨子域(owwo.cn ↔ hermes.owwo.cn),见 ADR-0002「生产」段。
+      - OWWO_SESSION_DOMAIN=.owwo.cn
+      # /auth-check 重定向的登录页基础 URL / nginx error_page 跳转指向的 Hermes URL。
+      # fastapi 用这两个环境变量构造重定向(不读 X-Forwarded-Proto),故 URL 一定是 https://。
+      - OWWO_PUBLIC_URL=https://owwo.cn
+      - OWWO_HERMES_URL=https://hermes.owwo.cn
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # 构建期注入(见 frontend/Dockerfile):硬编码 owwo.cn 专属值,非敏感不走 .env。
+        VITE_HERMES_URL: https://hermes.owwo.cn
+        VITE_DEEPSEEK_URL: https://deepseek.owwo.cn
+    restart: unless-stopped
+    # 同 fastapi:只绑 loopback,经宿主机 nginx 对外。
+    ports:
+      - "127.0.0.1:8082:80"
+
+# 回滚保险(ADR-0003):Hermes 曾以容器跑在此 compose(数据卷 hermes_data)。
+# 切原生后卷声明保留 —— compose 不会清理已声明的卷,数据( sessions/config/skills )
+# 已迁移到原生侧,此卷是双轨回滚期间的原样快照。回滚 = git checkout 迁移前提交 +
+# docker compose up -d(见 NATIVE-HERMES-MIGRATION.md「回滚」)。稳定后可
+# docker volume rm 手动清掉并删除本声明。
+volumes:
+  hermes_data:
